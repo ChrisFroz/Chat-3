@@ -1,56 +1,66 @@
-import threading, time
-from datetime import datetime
-from supabase import create_client
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Chat del curso</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 20px auto; padding: 0 12px; }
+    #mensajes { border: 1px solid #ccc; border-radius: 8px; height: 400px; overflow-y: auto; padding: 10px; }
+    .hora { color: #888; font-size: 12px; }
+    form { display: flex; gap: 6px; margin-top: 8px; }
+    #texto { flex: 1; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Chat del curso</h1>
+  <div id="mensajes"></div>
+  <form id="formulario">
+    <input id="texto" placeholder="Escribe un mensaje..." autocomplete="off">
+    <button>Enviar</button>
+  </form>
 
-URL = "https://tojilmdcubopzsbrsmtb.supabase.co"   # pega aquí la URL del proyecto
-KEY = "sb_publishable_tO8YBGhdjtx1JXw8JtkQew_ywX5VHAc"   # pega aquí la clave publishable
+  <script>
+    const URL_SUPABASE = "https://tojilmdcubopzsbrsmtb.supabase.co";
+    const KEY = "sb_publishable_tO8YBGhdjtx1JXw8JtkQew_ywX5VHAc";
+    const db = supabase.createClient(URL_SUPABASE, KEY);
 
-supabase = create_client(URL, KEY)
+    const nombre = prompt("Tu nombre:") || "Anónimo";
+    const caja = document.getElementById("mensajes");
+    let ultimoId = 0;
 
+    function mostrar(m) {
+      const hora = new Date(m.created_at).toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+      const linea = document.createElement("div");
+      linea.innerHTML = `<span class="hora">[${hora}]</span> <b></b>: <span></span>`;
+      linea.querySelector("b").textContent = m.autor;
+      linea.querySelectorAll("span")[1].textContent = m.texto;
+      caja.appendChild(linea);
+      caja.scrollTop = caja.scrollHeight;
+      ultimoId = m.id;
+    }
 
-def mostrar(m):
-    try:
-        hora = datetime.fromisoformat(m["created_at"]).astimezone().strftime("%H:%M")
-    except ValueError:
-        hora = m["created_at"][11:16]
-    print(f"[{hora}] {m['autor']}: {m['texto']}")
+    async function cargarHistorial() {
+      const { data } = await db.from("mensajes").select("*").order("id", { ascending: false }).limit(20);
+      data.reverse().forEach(mostrar);
+    }
 
+    async function revisarNuevos() {
+      const { data } = await db.from("mensajes").select("*").gt("id", ultimoId).order("id");
+      if (data) data.forEach(mostrar);
+    }
 
-# 1) Mostrar los últimos 20 mensajes
-r = supabase.table("mensajes").select("*").order("id", desc=True).limit(20).execute()
-historial = list(reversed(r.data))
-for m in historial:
-    mostrar(m)
-ultimo_id = historial[-1]["id"] if historial else 0
+    document.getElementById("formulario").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = document.getElementById("texto");
+      const texto = input.value.trim();
+      if (!texto) return;
+      input.value = "";
+      await db.from("mensajes").insert({ autor: nombre, texto: texto.slice(0, 500) });
+    });
 
-# 2) Pedir tu nombre
-nombre = ""
-while not nombre:
-    nombre = input("\nTu nombre: ").strip()[:30]
-print(f"¡Hola, {nombre}! Escribe y presiona Enter. Para salir: /salir\n")
-
-
-# 3) Hilo que revisa mensajes nuevos cada 2 segundos
-def escuchar():
-    global ultimo_id
-    while True:
-        try:
-            r = supabase.table("mensajes").select("*").gt("id", ultimo_id).order("id").execute()
-            for m in r.data:
-                if m["autor"] != nombre:
-                    mostrar(m)
-                ultimo_id = m["id"]
-        except Exception:
-            pass
-        time.sleep(2)
-
-
-threading.Thread(target=escuchar, daemon=True).start()
-
-# 4) Enviar lo que escribes
-while True:
-    texto = input().strip()
-    if texto == "/salir":
-        break
-    if texto:
-        supabase.table("mensajes").insert({"autor": nombre, "texto": texto[:500]}).execute()
+    cargarHistorial().then(() => setInterval(revisarNuevos, 2000));
+  </script>
+</body>
+</html>
