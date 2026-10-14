@@ -1,0 +1,56 @@
+import threading, time
+from datetime import datetime
+from supabase import create_client
+
+URL = ""   # pega aquí la URL del proyecto
+KEY = ""   # pega aquí la clave publishable
+
+supabase = create_client(URL, KEY)
+
+
+def mostrar(m):
+    try:
+        hora = datetime.fromisoformat(m["created_at"]).astimezone().strftime("%H:%M")
+    except ValueError:
+        hora = m["created_at"][11:16]
+    print(f"[{hora}] {m['autor']}: {m['texto']}")
+
+
+# 1) Mostrar los últimos 20 mensajes
+r = supabase.table("mensajes").select("*").order("id", desc=True).limit(20).execute()
+historial = list(reversed(r.data))
+for m in historial:
+    mostrar(m)
+ultimo_id = historial[-1]["id"] if historial else 0
+
+# 2) Pedir tu nombre
+nombre = ""
+while not nombre:
+    nombre = input("\nTu nombre: ").strip()[:30]
+print(f"¡Hola, {nombre}! Escribe y presiona Enter. Para salir: /salir\n")
+
+
+# 3) Hilo que revisa mensajes nuevos cada 2 segundos
+def escuchar():
+    global ultimo_id
+    while True:
+        try:
+            r = supabase.table("mensajes").select("*").gt("id", ultimo_id).order("id").execute()
+            for m in r.data:
+                if m["autor"] != nombre:
+                    mostrar(m)
+                ultimo_id = m["id"]
+        except Exception:
+            pass
+        time.sleep(2)
+
+
+threading.Thread(target=escuchar, daemon=True).start()
+
+# 4) Enviar lo que escribes
+while True:
+    texto = input().strip()
+    if texto == "/salir":
+        break
+    if texto:
+        supabase.table("mensajes").insert({"autor": nombre, "texto": texto[:500]}).execute()
